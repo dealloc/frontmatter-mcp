@@ -12,8 +12,10 @@
         <PackAsTool>true</PackAsTool>
         <PackageType>McpServer</PackageType>
 
-        <!-- Set up the MCP server to be a self-contained application that does not rely on a shared framework -->
-        <SelfContained>true</SelfContained>
+        <!-- Set up the MCP server to be a self-contained application that does not rely on a shared framework.
+             Only PublishSelfContained is set (not SelfContained), so dotnet build/dotnet test (used by the
+             test project's ProjectReference) are not forced into self-contained mode; publish still passes
+             the self-contained flag explicitly. -->
         <PublishSelfContained>true</PublishSelfContained>
 
         <!-- Set up the MCP server to be a single file executable -->
