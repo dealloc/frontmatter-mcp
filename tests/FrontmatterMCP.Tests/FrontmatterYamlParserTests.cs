@@ -48,8 +48,8 @@ public sealed class FrontmatterYamlParserTests
         await Assert.That(result.Error).IsNull();
         await Assert.That(result.Value!["count"]).IsEqualTo(42L);
         await Assert.That(result.Value!["ratio"]).IsEqualTo(3.14);
-        await Assert.That(result.Value!["enabled"]).IsEqualTo(true);
-        await Assert.That(result.Value!["disabled"]).IsEqualTo(false);
+        await Assert.That((bool)result.Value!["enabled"]!).IsTrue();
+        await Assert.That((bool)result.Value!["disabled"]!).IsFalse();
         await Assert.That(result.Value!["nothing"]).IsNull();
         await Assert.That(result.Value!["quoted_number"]).IsEqualTo("42");
     }
