@@ -1,0 +1,6 @@
+style = "conventional"
+subject_capitalized = false
+# GitHub Actions checks out the PR's synthetic merge commit by default;
+# its auto-generated message ("Merge X into Y") isn't conventional
+# format and shouldn't be linted as if a human wrote it.
+merge_commit = false

@@ -1,0 +1,143 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing git tag to build a release for (e.g. v0.2.0)'
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  changelog:
+    name: Changelog
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Extract version from tag
+        id: version
+        env:
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
+        run: |
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.version.outputs.tag }}
+          fetch-depth: 0
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff
+
+      - name: Generate release notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git-cliff --github-repo "${{ github.repository }}" \
+            --latest --strip all \
+            --output RELEASE_NOTES.md
+
+      - name: Build release body
+        env:
+          EXISTING_BODY: ${{ github.event.release.body }}
+        run: |
+          if [ -n "$EXISTING_BODY" ]; then
+            printf '%s\n\n' "$EXISTING_BODY" > RELEASE_BODY.md
+          else
+            : > RELEASE_BODY.md
+          fi
+          cat RELEASE_NOTES.md >> RELEASE_BODY.md
+
+      - name: Create or update release
+        uses: ncipollo/release-action@v1
+        with:
+          allowUpdates: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ steps.version.outputs.tag }}
+          bodyFile: RELEASE_BODY.md
+          omitNameDuringUpdate: true
+          omitDraftDuringUpdate: true
+          omitPrereleaseDuringUpdate: true
+
+  build:
+    name: Build (${{ matrix.rid }})
+    needs: changelog
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    strategy:
+      # One RID failing (e.g. a transient runner issue) must not cancel the others mid-release,
+      # which would otherwise leave a published release with a partial, inconsistent artifact set.
+      fail-fast: false
+      matrix:
+        include:
+          # Only RIDs that are *natively* buildable on a stock GitHub-hosted runner are included
+          # here. Native AOT publish is a native-toolchain operation: cross-OS is not possible at
+          # all, and cross-arch/cross-libc needs toolchain setup (MSVC ARM64 components, an Alpine
+          # container for musl) this project doesn't carry. win-arm64 and linux-musl-x64 stay in
+          # the project's <RuntimeIdentifiers/> for users to self-publish, but are not built here.
+          - rid: win-x64
+            os: windows-latest
+            extension: .exe
+          - rid: osx-arm64
+            os: macos-latest
+            extension: ''
+          - rid: linux-x64
+            os: ubuntu-latest
+            extension: ''
+          - rid: linux-arm64
+            os: ubuntu-24.04-arm
+            extension: ''
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.changelog.outputs.tag }}
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Publish
+        run: >
+          dotnet publish src/FrontmatterMCP -c Release -r ${{ matrix.rid }}
+          --self-contained -p:PublishAot=true -p:Version=${{ needs.changelog.outputs.version }}
+
+      - name: Package (zip, Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist | Out-Null
+          Copy-Item "src/FrontmatterMCP/bin/Release/net10.0/${{ matrix.rid }}/publish/FrontmatterMCP${{ matrix.extension }}" dist/
+          Copy-Item LICENSE.md dist/
+          Compress-Archive -Path dist/* -DestinationPath "frontmatter-mcp-${{ matrix.rid }}.zip"
+
+      - name: Package (tar.gz, Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir dist
+          cp "src/FrontmatterMCP/bin/Release/net10.0/${{ matrix.rid }}/publish/FrontmatterMCP${{ matrix.extension }}" dist/
+          cp LICENSE.md dist/
+          tar -czf "frontmatter-mcp-${{ matrix.rid }}.tar.gz" -C dist "FrontmatterMCP${{ matrix.extension }}" LICENSE.md
+
+      - name: Upload artifact to release
+        uses: ncipollo/release-action@v1
+        with:
+          allowUpdates: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ needs.changelog.outputs.tag }}
+          artifacts: frontmatter-mcp-${{ matrix.rid }}.*
+          omitBodyDuringUpdate: true
+          omitNameDuringUpdate: true
+          omitDraftDuringUpdate: true
+          omitPrereleaseDuringUpdate: true
