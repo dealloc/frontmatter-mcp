@@ -18,7 +18,56 @@ internal sealed class FrontmatterTools
         string path,
         [Description("How to shape the response: Parsed (default), Raw, or Both.")]
         FrontmatterFormat format = FrontmatterFormat.Parsed,
+        CancellationToken cancellationToken = default) =>
+        await ReadOne(path, format, cancellationToken).ConfigureAwait(false);
+
+    [McpServerTool]
+    [Description(
+        "Reads only the YAML frontmatter block from multiple markdown files, given either explicit paths " +
+        "or a glob pattern (e.g. 'docs/adr/*.md' or 'skills/**/*.md' for recursive matching), without " +
+        "loading document bodies. Provide exactly one of 'paths' or 'glob'.")]
+    public static async Task<IReadOnlyList<FrontmatterResult>> ReadFrontmatterBatch(
+        [Description("Explicit file paths to read. Mutually exclusive with 'glob'.")]
+        string[]? paths = null,
+        [Description("Glob pattern (supports ** for recursion), resolved relative to the server's working directory. Mutually exclusive with 'paths'.")]
+        string? glob = null,
+        [Description("How to shape each result: Parsed (default), Raw, or Both.")]
+        FrontmatterFormat format = FrontmatterFormat.Parsed,
+        [Description("Maximum number of files to process, guarding against an overly broad glob. Default 500.")]
+        int maxFiles = 500,
         CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<string> resolvedPaths = ResolvePaths(paths, glob, maxFiles, Directory.GetCurrentDirectory());
+
+        Task<FrontmatterResult>[] tasks = new Task<FrontmatterResult>[resolvedPaths.Count];
+        for (int i = 0; i < resolvedPaths.Count; i++)
+        {
+            tasks[i] = ReadOne(resolvedPaths[i], format, cancellationToken);
+        }
+
+        return await Task.WhenAll(tasks).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// <paramref name="globBaseDirectory"/> is a test seam for resolving relative glob patterns without
+    /// mutating the process-wide current directory; the real tool always passes the actual CWD.
+    /// </summary>
+    internal static IReadOnlyList<string> ResolvePaths(string[]? paths, string? glob, int maxFiles, string globBaseDirectory)
+    {
+        bool hasPaths = paths is { Length: > 0 };
+        bool hasGlob = !string.IsNullOrWhiteSpace(glob);
+
+        if (hasPaths == hasGlob)
+        {
+            throw new ArgumentException("Provide exactly one of 'paths' or 'glob'.");
+        }
+
+        return hasPaths
+            ? paths!.Take(maxFiles).ToList()
+            : GlobExpander.Expand(glob!, globBaseDirectory, maxFiles);
+    }
+
+    private static async Task<FrontmatterResult> ReadOne(string path, FrontmatterFormat format, CancellationToken cancellationToken)
     {
         FrontmatterExtraction extraction = await FrontmatterReader.ExtractAsync(path, cancellationToken).ConfigureAwait(false);
         return BuildResult(path, extraction, format);
