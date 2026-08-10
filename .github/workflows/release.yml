@@ -107,6 +107,18 @@ jobs:
         with:
           global-json-file: global.json
 
+      # .mcp/server.json's version fields aren't derived from Directory.Build.props at build time
+      # (they're read by MCP registries/clients, not MSBuild), so they'd otherwise stay hard-coded
+      # at whatever the working tree had - stamp them from the same tag-derived version as the
+      # binary below, matching the "stamped at build time, never committed" versioning approach.
+      - name: Stamp version into .mcp/server.json
+        shell: bash
+        run: |
+          jq --arg version "${{ needs.changelog.outputs.version }}" \
+            '.version = $version | .packages[0].version = $version' \
+            src/FrontmatterMCP/.mcp/server.json > server.json.tmp
+          mv server.json.tmp src/FrontmatterMCP/.mcp/server.json
+
       - name: Publish
         run: >
           dotnet publish src/FrontmatterMCP -c Release -r ${{ matrix.rid }}
