@@ -12,5 +12,7 @@ namespace FrontmatterMCP;
 [JsonSerializable(typeof(FrontmatterResult))]
 [JsonSerializable(typeof(FrontmatterFormat))]
 [JsonSerializable(typeof(IReadOnlyList<FrontmatterResult>))]
+[JsonSerializable(typeof(PropertyProjectionResult))]
+[JsonSerializable(typeof(IReadOnlyList<PropertyProjectionResult>))]
 [JsonSerializable(typeof(string[]))]
 internal sealed partial class FrontmatterJsonContext : JsonSerializerContext;

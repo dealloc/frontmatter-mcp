@@ -48,6 +48,51 @@ internal sealed class FrontmatterTools
         return await Task.WhenAll(tasks).ConfigureAwait(false);
     }
 
+    [McpServerTool]
+    [Description(
+        "Extracts specific named properties from the frontmatter of multiple markdown files (by explicit " +
+        "paths or glob), returning only the requested fields per file to minimize response size. Supports " +
+        "dotted paths for nested keys (e.g. 'metadata.owner'). Missing properties are reported explicitly " +
+        "so you can tell an absent field apart from an unreadable file.")]
+    public static async Task<IReadOnlyList<PropertyProjectionResult>> GetFrontmatterProperties(
+        [Description("Property names to extract, e.g. ['name', 'status']. Dotted paths reach nested keys, e.g. 'metadata.owner'.")]
+        string[] properties,
+        [Description("Explicit file paths to read. Mutually exclusive with 'glob'.")]
+        string[]? paths = null,
+        [Description("Glob pattern (supports ** for recursion), resolved relative to the server's working directory. Mutually exclusive with 'paths'.")]
+        string? glob = null,
+        [Description("Maximum number of files to process, guarding against an overly broad glob. Default 500.")]
+        int maxFiles = 500,
+        CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<string> resolvedPaths = ResolvePaths(paths, glob, maxFiles, Directory.GetCurrentDirectory());
+
+        Task<PropertyProjectionResult>[] tasks = new Task<PropertyProjectionResult>[resolvedPaths.Count];
+        for (int i = 0; i < resolvedPaths.Count; i++)
+        {
+            tasks[i] = ProjectOne(resolvedPaths[i], properties, cancellationToken);
+        }
+
+        return await Task.WhenAll(tasks).ConfigureAwait(false);
+    }
+
+    private static async Task<PropertyProjectionResult> ProjectOne(string path, string[] properties, CancellationToken cancellationToken)
+    {
+        FrontmatterExtraction extraction = await FrontmatterReader.ExtractAsync(path, cancellationToken).ConfigureAwait(false);
+
+        Dictionary<string, object?>? map = extraction is { HasFrontmatter: true, Error: null }
+            ? FrontmatterYamlParser.Parse(extraction.Raw!).Value
+            : null;
+
+        if (map is null)
+        {
+            return new PropertyProjectionResult { Path = path, Values = [], Missing = properties };
+        }
+
+        (Dictionary<string, object?> values, List<string> missing) = PropertyProjection.Project(map, properties);
+        return new PropertyProjectionResult { Path = path, Values = YamlNodeConverter.ToJsonObject(values), Missing = missing };
+    }
+
     /// <summary>
     /// <paramref name="globBaseDirectory"/> is a test seam for resolving relative glob patterns without
     /// mutating the process-wide current directory; the real tool always passes the actual CWD.
