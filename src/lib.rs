@@ -6,3 +6,4 @@
 //! project's migration plan for the full module map.
 
 pub mod frontmatter;
+pub mod yaml;

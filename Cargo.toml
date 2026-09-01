@@ -42,6 +42,8 @@ semicolon_if_nothing_returned = "warn"
 missing_panics_doc = "allow"
 
 [dependencies]
+saphyr-parser = "0.0.12"
+serde_json = { version = "1.0.151", features = ["preserve_order"] }
 tokio = { version = "1.53.1", features = [
   "rt",
   "macros",
