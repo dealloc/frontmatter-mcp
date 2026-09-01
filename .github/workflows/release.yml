@@ -208,9 +208,35 @@ jobs:
           path: target/${{ matrix.target }}/release/frontmatter-mcp${{ matrix.ext }}
           if-no-files-found: error
 
+  # Generate the manifest's tool list once, from the (runnable-on-linux)
+  # linux-x64 binary, so every platform bundle carries the same list and it
+  # can never drift from what the server actually exposes.
+  tool-list:
+    name: Generate manifest tool list
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.changelog.outputs.tag }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: bin-linux-x64
+          path: bin
+      - name: Extract tool list
+        run: |
+          chmod +x bin/frontmatter-mcp
+          packaging/tool-list.sh bin/frontmatter-mcp > tools.json
+          cat tools.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: manifest-tools
+          path: tools.json
+          if-no-files-found: error
+
   package-mcpb:
     name: Package .mcpb bundles
-    needs: [changelog, build]
+    needs: [changelog, build, tool-list]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -241,32 +267,31 @@ jobs:
           name: bin-${{ matrix.name }}
           path: bundle/server
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: manifest-tools
+
       - name: Render manifest.json
         run: |
           chmod +x "bundle/server/frontmatter-mcp${{ matrix.ext }}"
-          sed \
-            -e 's/__VERSION__/${{ needs.changelog.outputs.version }}/g' \
-            -e 's/__ENTRY__/frontmatter-mcp/g' \
-            -e 's/__PLATFORM__/${{ matrix.platform }}/g' \
-            packaging/manifest.json.tmpl > bundle/manifest.json
+          packaging/render-manifest.sh \
+            "${{ needs.changelog.outputs.version }}" \
+            frontmatter-mcp \
+            "${{ matrix.platform }}" \
+            tools.json > bundle/manifest.json
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
 
+      # mcpb bundle signing is broken in the current release (`sign` reports
+      # success but `verify` says "not signed" - modelcontextprotocol/mcpb
+      # #278/#281), so bundles ship unsigned; Claude Desktop shows an
+      # "Install Anyway" prompt. This is unrelated to the ad-hoc OS
+      # code-signing done in the build job.
       - name: Pack .mcpb bundle
         run: |
-          npx --yes @anthropic-ai/mcpb pack bundle \
-            "frontmatter-mcp-${{ matrix.name }}.mcpb"
-
-      - name: Sign .mcpb bundle (self-signed)
-        # mcpb bundle signing is application-level tamper-evidence only; it
-        # is unrelated to OS code-signing (see the ad-hoc codesign step in
-        # the build job). If Claude Desktop's zip parser still rejects
-        # signed bundles (modelcontextprotocol/mcpb#278/#281), this step can
-        # be dropped and the bundle shipped unsigned.
-        run: |
-          npx --yes @anthropic-ai/mcpb sign --self-signed \
+          npx --yes @anthropic-ai/mcpb@2.1.2 pack bundle \
             "frontmatter-mcp-${{ matrix.name }}.mcpb"
 
       - name: Checksum

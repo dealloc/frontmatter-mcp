@@ -79,3 +79,29 @@ jobs:
 
       - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo nextest run --no-fail-fast --no-tests pass
+
+  packaging:
+    name: Packaging (.mcpb manifest, server.json)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install pinned toolchain
+        run: rustup show
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: jq empty .mcp/server.json
+
+      - name: Render and pack the .mcpb bundle
+        run: |
+          cargo build --locked
+          mkdir -p bundle/server
+          cp target/debug/frontmatter-mcp bundle/server/
+          packaging/tool-list.sh bundle/server/frontmatter-mcp > tools.json
+          packaging/render-manifest.sh 0.0.0 frontmatter-mcp linux tools.json > bundle/manifest.json
+          npx --yes @anthropic-ai/mcpb@2.1.2 pack bundle "${RUNNER_TEMP}/ci.mcpb"
