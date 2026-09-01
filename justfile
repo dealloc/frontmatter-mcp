@@ -21,7 +21,7 @@ commits:
     committed origin/master..HEAD
 
 test profile='fast':
-    cargo nextest run --no-fail-fast --cargo-profile {{ profile }}
+    cargo nextest run --no-fail-fast --no-tests pass --cargo-profile {{ profile }}
 
 # Apply every automatic fix available, then re-check.
 fix:

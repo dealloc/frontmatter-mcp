@@ -73,4 +73,4 @@ jobs:
           tool: cargo-nextest
 
       - run: cargo clippy --all-targets --all-features -- -D warnings
-      - run: cargo nextest run --no-fail-fast
+      - run: cargo nextest run --no-fail-fast --no-tests pass
