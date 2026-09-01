@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  # A separate job (rather than `just precommit`'s `commits` recipe) because
+  # a PR checkout doesn't reliably have `origin/master` locally - it needs
+  # the PR's actual base ref, and this only makes sense for pull requests.
+  commits:
+    name: Commit messages
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: committed
+
+      - name: Lint commit messages
+        run: committed "origin/${{ github.base_ref }}..HEAD"
+
+  precommit:
+    name: Full gate (format, lint, dependencies, test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install pinned toolchain
+        run: rustup show
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,cargo-nextest,cargo-deny,cargo-machete,cargo-audit,taplo-cli
+
+      - run: just format lint dependencies test
+
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install pinned toolchain
+        run: rustup show
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo nextest run --no-fail-fast
