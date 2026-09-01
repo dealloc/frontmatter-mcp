@@ -25,8 +25,13 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
+      # actions/checkout defaults to the PR's synthetic merge commit
+      # (refs/pull/N/merge) on pull_request events; check out the branch's
+      # actual last commit instead, or committed lints GitHub's own
+      # auto-generated, non-conventional merge commit message.
       - uses: actions/checkout@v5
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
       - uses: taiki-e/install-action@v2
