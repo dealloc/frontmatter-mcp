@@ -1,6 +1,7 @@
 style = "conventional"
 subject_capitalized = false
-# GitHub Actions checks out the PR's synthetic merge commit by default;
-# its auto-generated message ("Merge X into Y") isn't conventional
-# format and shouldn't be linted as if a human wrote it.
+# Reject merge commits in history (this repo rebases/fast-forwards
+# instead). CI checks out the PR branch's actual head commit rather
+# than GitHub's synthetic merge ref, so this never lints GitHub's own
+# auto-generated merge commit message - see .github/workflows/ci.yml.
 merge_commit = false

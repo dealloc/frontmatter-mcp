@@ -1,39 +1,57 @@
 name: Release
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
-      tag:
-        description: 'Existing git tag to build a release for (e.g. v0.2.0)'
+      version:
+        description: 'Version to release, e.g. v0.2.0 (creates the tag + GitHub release)'
         required: true
         type: string
+  release:
+    types: [published]
 
 permissions: {}
 
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
 jobs:
   changelog:
-    name: Changelog
+    name: Tag & changelog
     runs-on: ubuntu-latest
     permissions:
       contents: write
     outputs:
       tag: ${{ steps.version.outputs.tag }}
       version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
-      - name: Extract version from tag
+      - name: Extract version
         id: version
         env:
-          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.event.release.tag_name }}
         run: |
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          # A hyphen in the version is a semver pre-release identifier
+          # (e.g. v0.1.0-rc.1).
+          case "$TAG" in
+            *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
 
       - uses: actions/checkout@v5
         with:
-          ref: ${{ steps.version.outputs.tag }}
           fetch-depth: 0
+
+      - name: Create tag
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.version.outputs.tag }}" -m "${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
 
       - uses: taiki-e/install-action@v2
         with:
@@ -65,82 +83,111 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag: ${{ steps.version.outputs.tag }}
           bodyFile: RELEASE_BODY.md
+          prerelease: ${{ steps.version.outputs.prerelease }}
           omitNameDuringUpdate: true
           omitDraftDuringUpdate: true
-          omitPrereleaseDuringUpdate: true
 
   build:
-    name: Build (${{ matrix.rid }})
+    name: Build (${{ matrix.name }})
     needs: changelog
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     strategy:
-      # One RID failing (e.g. a transient runner issue) must not cancel the others mid-release,
-      # which would otherwise leave a published release with a partial, inconsistent artifact set.
+      # One target failing (e.g. a transient runner issue) must not cancel
+      # the others mid-release, which would otherwise leave a published
+      # release with a partial, inconsistent artifact set.
       fail-fast: false
       matrix:
         include:
-          # Only RIDs that are *natively* buildable on a stock GitHub-hosted runner are included
-          # here. Native AOT publish is a native-toolchain operation: cross-OS is not possible at
-          # all, and cross-arch/cross-libc needs toolchain setup (MSVC ARM64 components, an Alpine
-          # container for musl) this project doesn't carry. win-arm64 and linux-musl-x64 stay in
-          # the project's <RuntimeIdentifiers/> for users to self-publish, but are not built here.
-          - rid: win-x64
-            os: windows-latest
-            extension: .exe
-          - rid: osx-arm64
-            os: macos-latest
-            extension: ''
-          - rid: linux-x64
+          - name: linux-x64
             os: ubuntu-latest
-            extension: ''
-          - rid: linux-arm64
+            target: x86_64-unknown-linux-gnu
+            archive: frontmatter-mcp-linux-x64.tar.gz
+          - name: linux-arm64
             os: ubuntu-24.04-arm
-            extension: ''
+            target: aarch64-unknown-linux-gnu
+            archive: frontmatter-mcp-linux-arm64.tar.gz
+          - name: osx-arm64
+            os: macos-latest
+            target: aarch64-apple-darwin
+            archive: frontmatter-mcp-osx-arm64.tar.gz
+          - name: osx-x64
+            os: macos-latest
+            target: x86_64-apple-darwin
+            archive: frontmatter-mcp-osx-x64.tar.gz
+          - name: win-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            ext: .exe
+            archive: frontmatter-mcp-win-x64.zip
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ needs.changelog.outputs.tag }}
 
-      - uses: actions/setup-dotnet@v4
-        with:
-          global-json-file: global.json
+      - name: Toolchain
+        run: |
+          rustup show
+          rustup target add ${{ matrix.target }}
 
-      # .mcp/server.json's version fields aren't derived from Directory.Build.props at build time
-      # (they're read by MCP registries/clients, not MSBuild), so they'd otherwise stay hard-coded
-      # at whatever the working tree had - stamp them from the same tag-derived version as the
-      # binary below, matching the "stamped at build time, never committed" versioning approach.
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Stamp version into Cargo.toml and Cargo.lock
+        env:
+          VERSION: ${{ needs.changelog.outputs.version }}
+        run: |
+          sed -i.bak "s/^version = \"[^\"]*\"/version = \"${VERSION}\"/" Cargo.toml
+          # Keep Cargo.lock's own-package entry in sync so --locked stays
+          # usable; dependency versions are untouched.
+          sed -i.bak "/^name = \"frontmatter-mcp\"$/{n;s/^version = .*/version = \"${VERSION}\"/;}" Cargo.lock
+          rm -f Cargo.toml.bak Cargo.lock.bak
+          git --no-pager diff --stat
+
       - name: Stamp version into .mcp/server.json
-        shell: bash
         run: |
-          jq --arg version "${{ needs.changelog.outputs.version }}" \
-            '.version = $version | .packages[0].version = $version' \
-            src/FrontmatterMCP/.mcp/server.json > server.json.tmp
-          mv server.json.tmp src/FrontmatterMCP/.mcp/server.json
+          jq --arg v "${{ needs.changelog.outputs.version }}" \
+            '.version = $v | (.packages[] | .version) |= $v' \
+            .mcp/server.json > server.json.tmp
+          mv server.json.tmp .mcp/server.json
 
-      - name: Publish
-        run: >
-          dotnet publish src/FrontmatterMCP -c Release -r ${{ matrix.rid }}
-          --self-contained -p:PublishAot=true -p:Version=${{ needs.changelog.outputs.version }}
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
 
-      - name: Package (zip, Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
+      - name: Codesign (macOS, ad-hoc)
+        if: runner.os == 'macOS'
         run: |
-          New-Item -ItemType Directory -Path dist | Out-Null
-          Copy-Item "src/FrontmatterMCP/bin/Release/net10.0/${{ matrix.rid }}/publish/FrontmatterMCP${{ matrix.extension }}" dist/
-          Copy-Item LICENSE.md dist/
-          Compress-Archive -Path dist/* -DestinationPath "frontmatter-mcp-${{ matrix.rid }}.zip"
+          codesign -s - --force --timestamp=none \
+            "target/${{ matrix.target }}/release/frontmatter-mcp"
 
-      - name: Package (tar.gz, Unix)
-        if: runner.os != 'Windows'
-        shell: bash
+      - name: Package
+        env:
+          ARCHIVE: ${{ matrix.archive }}
+          BIN: frontmatter-mcp${{ matrix.ext }}
         run: |
           mkdir dist
-          cp "src/FrontmatterMCP/bin/Release/net10.0/${{ matrix.rid }}/publish/FrontmatterMCP${{ matrix.extension }}" dist/
+          cp "target/${{ matrix.target }}/release/${BIN}" dist/
           cp LICENSE.md dist/
-          tar -czf "frontmatter-mcp-${{ matrix.rid }}.tar.gz" -C dist "FrontmatterMCP${{ matrix.extension }}" LICENSE.md
+          if [[ "$ARCHIVE" == *.zip ]]; then
+            (cd dist && 7z a "../${ARCHIVE}" "$BIN" LICENSE.md)
+          else
+            tar -czf "$ARCHIVE" -C dist "$BIN" LICENSE.md
+          fi
+          # sha256sum on Linux and Git-bash for Windows; shasum on macOS.
+          if command -v sha256sum >/dev/null; then
+            sha256sum "$ARCHIVE" > "${ARCHIVE}.sha256"
+          else
+            shasum -a 256 "$ARCHIVE" > "${ARCHIVE}.sha256"
+          fi
+
+      - uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: ${{ matrix.archive }}
 
       - name: Upload artifact to release
         uses: ncipollo/release-action@v1
@@ -148,7 +195,119 @@ jobs:
           allowUpdates: true
           token: ${{ secrets.GITHUB_TOKEN }}
           tag: ${{ needs.changelog.outputs.tag }}
-          artifacts: frontmatter-mcp-${{ matrix.rid }}.*
+          artifacts: "${{ matrix.archive }},${{ matrix.archive }}.sha256"
+          omitBodyDuringUpdate: true
+          omitNameDuringUpdate: true
+          omitDraftDuringUpdate: true
+          omitPrereleaseDuringUpdate: true
+
+      - name: Upload raw binary for mcpb packaging
+        uses: actions/upload-artifact@v4
+        with:
+          name: bin-${{ matrix.name }}
+          path: target/${{ matrix.target }}/release/frontmatter-mcp${{ matrix.ext }}
+          if-no-files-found: error
+
+  # Generate the manifest's tool list once, from the (runnable-on-linux)
+  # linux-x64 binary, so every platform bundle carries the same list and it
+  # can never drift from what the server actually exposes.
+  tool-list:
+    name: Generate manifest tool list
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.changelog.outputs.tag }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: bin-linux-x64
+          path: bin
+      - name: Extract tool list
+        run: |
+          chmod +x bin/frontmatter-mcp
+          packaging/tool-list.sh bin/frontmatter-mcp > tools.json
+          cat tools.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: manifest-tools
+          path: tools.json
+          if-no-files-found: error
+
+  package-mcpb:
+    name: Package .mcpb bundles
+    needs: [changelog, build, tool-list]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64
+            platform: linux
+          - name: linux-arm64
+            platform: linux
+          - name: osx-arm64
+            platform: darwin
+          - name: osx-x64
+            platform: darwin
+          - name: win-x64
+            platform: win32
+            ext: .exe
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.changelog.outputs.tag }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: bin-${{ matrix.name }}
+          path: bundle/server
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: manifest-tools
+
+      - name: Render manifest.json
+        run: |
+          chmod +x "bundle/server/frontmatter-mcp${{ matrix.ext }}"
+          packaging/render-manifest.sh \
+            "${{ needs.changelog.outputs.version }}" \
+            frontmatter-mcp \
+            "${{ matrix.platform }}" \
+            tools.json > bundle/manifest.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # mcpb bundle signing is broken in the current release (`sign` reports
+      # success but `verify` says "not signed" - modelcontextprotocol/mcpb
+      # #278/#281), so bundles ship unsigned; Claude Desktop shows an
+      # "Install Anyway" prompt. This is unrelated to the ad-hoc OS
+      # code-signing done in the build job.
+      - name: Pack .mcpb bundle
+        run: |
+          npx --yes @anthropic-ai/mcpb@2.1.2 pack bundle \
+            "frontmatter-mcp-${{ matrix.name }}.mcpb"
+
+      - name: Checksum
+        run: sha256sum "frontmatter-mcp-${{ matrix.name }}.mcpb" > "frontmatter-mcp-${{ matrix.name }}.mcpb.sha256"
+
+      - uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: frontmatter-mcp-${{ matrix.name }}.mcpb
+
+      - name: Upload to release
+        uses: ncipollo/release-action@v1
+        with:
+          allowUpdates: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ needs.changelog.outputs.tag }}
+          artifacts: "frontmatter-mcp-${{ matrix.name }}.mcpb,frontmatter-mcp-${{ matrix.name }}.mcpb.sha256"
           omitBodyDuringUpdate: true
           omitNameDuringUpdate: true
           omitDraftDuringUpdate: true

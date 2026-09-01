@@ -1,4 +1,0 @@
-<Solution>
-  <Project Path="src/FrontmatterMCP/FrontmatterMCP.csproj" />
-  <Project Path="tests/FrontmatterMCP.Tests/FrontmatterMCP.Tests.csproj" />
-</Solution>

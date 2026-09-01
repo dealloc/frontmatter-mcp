@@ -1,90 +1,53 @@
 # Contributing
 
-## AI usage
+## Prerequisites
 
-AI assistance is welcome under the conditions in [AI-POLICY.md](AI-POLICY.md):
-you remain fully responsible for what you submit, and disclosure of AI
-involvement is expected.
+- The Rust toolchain pinned in [`rust-toolchain.toml`](rust-toolchain.toml)
+  (installed automatically by `rustup` when you run any `cargo` command in
+  this repo).
+- [`just`](https://just.systems) as the task runner.
+- The rest of the tooling `just precommit` needs — install it in one step:
 
-## Layout
+  ```sh
+  just setup
+  ```
 
-Single-project .NET solution:
+## Workflow
 
-- `src/FrontmatterMCP/` — the MCP server itself.
-  - `Tools/` — `[McpServerTool]`-decorated methods, kept as thin adapters over `Core/`.
-  - `Core/` — the actual logic (streaming extraction, YAML parsing, glob
-    expansion, property projection), independently unit-testable with no MCP
-    server bootstrapping required. Types here are `internal`.
-  - `FrontmatterJsonContext.cs` — source-generated JSON metadata for every
-    custom type that crosses the tool boundary (parameters and return
-    values). Required for Native AOT: without an entry here, the published
-    binary crashes at startup trying to resolve that type's schema. If you
-    add a new tool parameter or return type, add it here too.
-- `tests/FrontmatterMCP.Tests/` — TUnit tests, mirroring the `Core`/`Tools`
-  structure, with fixture markdown files under `Fixtures/`.
+- **Test-first.** For a new module or behavior, write the test(s) first, see
+  them fail, then implement until they pass. No module lands without tests
+  written before its implementation.
+- **Warnings are errors, always.** Never leave a `cargo check` / `cargo
+  clippy` warning standing while you work — fix it immediately. `#[allow(...)]`
+  is not an escape hatch here; if a lint fires, either the code or the lint
+  configuration changes, not an `allow`.
+- **Let the tools format the code.** Don't hand-align or hand-wrap code —
+  run `cargo fmt` (and `taplo format` for TOML) and let them decide.
+- **Prefer `cargo` commands over hand-edited `Cargo.toml`.** Add a
+  dependency with `cargo add <crate>` (or `cargo add --dev <crate>` for a
+  dev-dependency) rather than typing a version in by hand.
 
-The SDK version is pinned in `global.json`. Build-wide settings
-(`TreatWarningsAsErrors`, analyzers, code style enforcement) live in
-`Directory.Build.props` and apply to every project.
+Before committing, run:
 
-## Setup
-
-```
-dotnet restore
-```
-
-## Before opening a PR
-
-These are the same checks CI runs (`.github/workflows/ci.yml`), so running
-them locally avoids CI failures:
-
-```
-dotnet build frontmatter-mcp.slnx --no-restore -warnaserror
-dotnet test --project tests/FrontmatterMCP.Tests
-dotnet format frontmatter-mcp.slnx --verify-no-changes
+```sh
+just precommit
 ```
 
-If you touched anything under `src/FrontmatterMCP/`, also confirm it still
-publishes clean under Native AOT — this is the check most likely to catch a
-reflection-based regression (e.g. accidentally using a reflection-based
-JSON/YAML API) before it reaches CI or a release:
-
-```
-dotnet publish src/FrontmatterMCP -c Release -r <your-RID> --self-contained -p:PublishAot=true
-```
-
-## Test-driven development
-
-This project is built test-first: write a failing TUnit test before writing
-the implementation it exercises. Add new fixture files under
-`tests/FrontmatterMCP.Tests/Fixtures/` for new edge cases (malformed input,
-encoding quirks, etc.) rather than constructing content inline, unless the
-test is specifically about a large or generated payload — see
-`FrontmatterReaderTests` for examples of generating large content in-memory
-instead of committing large fixture files.
+This runs the exact checks CI runs: formatting (`cargo fmt`, `taplo`),
+linting (`cargo check`, `cargo clippy -- -D warnings`), dependency hygiene
+(`cargo machete`, `cargo deny check`, `cargo audit`), commit-message linting
+(`committed`), and the test suite (`cargo nextest`).
 
 ## Commit messages
 
-Commit messages must follow [Conventional Commits](https://www.conventionalcommits.org/).
-This is enforced in CI (the `commits` job in `ci.yml`, on pull requests) via
-[`committed`](https://github.com/crate-ci/committed), configured in
-`committed.toml`. To check locally before pushing:
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/)
+and are linted by [`committed`](https://github.com/crate-ci/committed) (see
+[`committed.toml`](committed.toml)). Release notes are generated from these
+messages by [`git-cliff`](https://git-cliff.org/) (see [`cliff.toml`](cliff.toml)).
 
-```
-cargo install committed   # one-time, if you have a Rust toolchain
-committed origin/master..HEAD
-```
+## Releasing
 
-It's fine to skip this locally and let CI catch it — `committed` isn't part
-of the .NET build and adds no toolchain coupling.
-
-## Changelogs and releases
-
-Release notes are generated from conventional commit history via
-[git-cliff](https://git-cliff.org/) (`cliff.toml`) when a GitHub release is
-published — see `.github/workflows/release.yml`. You don't need to do
-anything for this beyond writing a conventional commit message.
-
-## License
-
-AGPL-3.0 — see [LICENSE.md](LICENSE.md).
+Releases are cut by running the `Release` GitHub Actions workflow with a
+`version` input (e.g. `v0.2.0`); it creates the tag, drafts the GitHub
+release, and builds the per-platform archives and `.mcpb` bundles. See
+[`.github/workflows/release.yml`](.github/workflows/release.yml).

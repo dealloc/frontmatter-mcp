@@ -1,0 +1,6 @@
+include = ["**/*.toml"]
+
+[formatting]
+align_entries = false
+reorder_keys = false
+indent_string = "  "

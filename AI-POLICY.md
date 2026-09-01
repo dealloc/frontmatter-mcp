@@ -1,33 +1,18 @@
-# AI policy
+# AI-assisted contributions
 
-How AI may be used in the development of frontmatter-mcp.
+AI tools (Claude, Copilot, or similar) may be used to help write code, tests,
+or documentation for this project. If you use one, you're expected to:
 
-## Use
+- **Review everything before submitting it.** You are responsible for every
+  line in your PR, whether or not a human typed it first.
+- **Hold it to the same bar as hand-written code.** Test-first development,
+  `just precommit` passing, and no lint suppressions apply regardless of who
+  or what wrote the code.
+- **Not paste secrets, credentials, or another party's proprietary code**
+  into an AI tool as context.
+- **Disclose significant AI involvement** in the PR description when a
+  substantial portion of a change was AI-generated, so reviewers can weight
+  their review accordingly.
 
-AI assistance is **allowed anywhere** in development — code, documentation,
-tests, tooling — under the responsibility and disclosure conditions below.
-
-## Responsibility
-
-The contributor is **ultimately responsible for what they submit**, whether
-they used AI or wrote it themselves. You are expected — required — to have
-read and understood your submission, and you should be able to defend it when
-challenged or questioned.
-
-All other contribution guidelines apply as always (quality bar, CI,
-[CONTRIBUTING.md](CONTRIBUTING.md)). The maintainers always retain the right
-to refuse contributions for whatever reason — low quality, low effort, AI
-slop, ….
-
-## Disclosure
-
-AI involvement should be disclosed in the pull request or via commit
-attribution (e.g. a `Co-Authored-By:` trailer) where relevant. This is not a
-hard requirement, but an expectation — a kindness extended to the maintainers
-reviewing your work.
-
-## Reviewing
-
-AI may be used for reviewing contributions. Maintainers are, like
-contributors, responsible for the AI they use: an AI review informs the
-human's judgement, it does not replace their accountability.
+Contributions are judged on their quality and correctness, not on how they
+were produced.

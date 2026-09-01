@@ -1,0 +1,86 @@
+[package]
+name = "frontmatter-mcp"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98.0"
+license = "AGPL-3.0-or-later"
+readme = "README.md"
+repository = "https://github.com/dealloc/frontmatter-mcp"
+description = "An MCP server that reads only the YAML frontmatter of markdown documents, without loading the document body."
+keywords = ["mcp", "markdown", "frontmatter", "yaml", "stdio"]
+categories = ["command-line-utilities"]
+publish = false
+
+[lib]
+name = "frontmatter_mcp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "frontmatter-mcp"
+path = "src/main.rs"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.rustdoc]
+private_intra_doc_links = "allow"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
+complexity = { level = "warn", priority = -1 }
+missing_docs_in_private_items = "warn"
+module_name_repetitions = "warn"
+semicolon_if_nothing_returned = "warn"
+# A `# Panics` section on every fallible/asserting fn (with
+# check-private-items on below, that includes every #[test]) is ceremony,
+# not signal - this is the one pedantic lint most strict codebases turn
+# off outright. missing_errors_doc stays on: it's low-noise (only public,
+# Result-returning fns) and the doc sections it asks for are genuinely
+# useful API documentation.
+missing_panics_doc = "allow"
+# rmcp's #[tool_handler] macro expands to an `async fn list_tools` with no
+# `.await`; the lint fires on code we don't own and can't change.
+unused_async_trait_impl = "allow"
+
+[dependencies]
+anyhow = "1.0.104"
+futures-util = { version = "0.3.34", default-features = false, features = [
+  "std",
+  "async-await",
+] }
+rmcp = { version = "3.2.0", features = ["server", "transport-io", "macros"] }
+saphyr-parser = "0.0.12"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.151", features = ["preserve_order"] }
+tokio = { version = "1.53.1", features = [
+  "rt",
+  "macros",
+  "io-std",
+  "io-util",
+  "fs",
+] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["fmt", "env-filter"] }
+wax = "0.7.0"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[profile.fast]
+inherits = "dev"
+opt-level = 0
+codegen-units = 256
+debug-assertions = true
+overflow-checks = true
+incremental = true
+
+[profile.fast.package."*"]
+opt-level = 0
+
+[dev-dependencies]
+rmcp = { version = "3.2.0", features = ["client"] }

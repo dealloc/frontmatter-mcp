@@ -4,7 +4,6 @@ on:
   push:
     branches: [master]
   pull_request:
-  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -13,14 +12,26 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
 jobs:
+  # A separate job (rather than `just precommit`'s `commits` recipe) because
+  # a PR checkout doesn't reliably have `origin/master` locally - it needs
+  # the PR's actual base ref, and this only makes sense for pull requests.
   commits:
     name: Commit messages
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
+      # actions/checkout defaults to the PR's synthetic merge commit
+      # (refs/pull/N/merge) on pull_request events; check out the branch's
+      # actual last commit instead, or committed lints GitHub's own
+      # auto-generated, non-conventional merge commit message.
       - uses: actions/checkout@v5
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
       - uses: taiki-e/install-action@v2
@@ -30,59 +41,67 @@ jobs:
       - name: Lint commit messages
         run: committed "origin/${{ github.base_ref }}..HEAD"
 
-  format:
-    name: Format
+  precommit:
+    name: Full gate (format, lint, dependencies, test)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/setup-dotnet@v4
+      - name: Install pinned toolchain
+        run: rustup show
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@v2
         with:
-          global-json-file: global.json
+          tool: just,cargo-nextest,cargo-deny,cargo-machete,cargo-audit,taplo-cli
 
-      - name: Check formatting
-        run: dotnet format frontmatter-mcp.slnx --verify-no-changes
-
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          global-json-file: global.json
-
-      - name: Restore
-        run: dotnet restore frontmatter-mcp.slnx
-
-      - name: Build
-        run: dotnet build frontmatter-mcp.slnx --no-restore -warnaserror
-
-  aot-smoke:
-    name: AOT publish smoke test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          global-json-file: global.json
-
-      - name: Publish self-contained AOT binary
-        run: >
-          dotnet publish src/FrontmatterMCP -c Release -r linux-x64
-          --self-contained -p:PublishAot=true
+      - run: just format lint dependencies test
 
   test:
-    name: Test
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install pinned toolchain
+        run: rustup show
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo nextest run --no-fail-fast --no-tests pass
+
+  packaging:
+    name: Packaging (.mcpb manifest, server.json)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/setup-dotnet@v4
-        with:
-          global-json-file: global.json
+      - name: Install pinned toolchain
+        run: rustup show
 
-      - name: Run tests
-        run: dotnet test --project tests/FrontmatterMCP.Tests
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: jq empty .mcp/server.json
+
+      - name: Render and pack the .mcpb bundle
+        run: |
+          cargo build --locked
+          mkdir -p bundle/server
+          cp target/debug/frontmatter-mcp bundle/server/
+          packaging/tool-list.sh bundle/server/frontmatter-mcp > tools.json
+          packaging/render-manifest.sh 0.0.0 frontmatter-mcp linux tools.json > bundle/manifest.json
+          npx --yes @anthropic-ai/mcpb@2.1.2 pack bundle "${RUNNER_TEMP}/ci.mcpb"
