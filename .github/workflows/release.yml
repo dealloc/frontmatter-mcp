@@ -25,6 +25,7 @@ jobs:
     outputs:
       tag: ${{ steps.version.outputs.tag }}
       version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
       - name: Extract version
         id: version
@@ -33,6 +34,12 @@ jobs:
         run: |
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          # A hyphen in the version is a semver pre-release identifier
+          # (e.g. v0.1.0-rc.1).
+          case "$TAG" in
+            *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
 
       - uses: actions/checkout@v5
         with:
@@ -76,9 +83,9 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag: ${{ steps.version.outputs.tag }}
           bodyFile: RELEASE_BODY.md
+          prerelease: ${{ steps.version.outputs.prerelease }}
           omitNameDuringUpdate: true
           omitDraftDuringUpdate: true
-          omitPrereleaseDuringUpdate: true
 
   build:
     name: Build (${{ matrix.name }})
