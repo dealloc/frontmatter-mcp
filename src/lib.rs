@@ -8,4 +8,5 @@
 pub mod frontmatter;
 pub mod glob;
 pub mod projection;
+pub mod tools;
 pub mod yaml;
