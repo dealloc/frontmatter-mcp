@@ -27,15 +27,28 @@ missing_docs = "warn"
 private_intra_doc_links = "allow"
 
 [lints.clippy]
-pedantic = "warn"
-suspicious = "warn"
-complexity = "warn"
+pedantic = { level = "warn", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
+complexity = { level = "warn", priority = -1 }
 missing_docs_in_private_items = "warn"
 module_name_repetitions = "warn"
 semicolon_if_nothing_returned = "warn"
+# A `# Panics` section on every fallible/asserting fn (with
+# check-private-items on below, that includes every #[test]) is ceremony,
+# not signal - this is the one pedantic lint most strict codebases turn
+# off outright. missing_errors_doc stays on: it's low-noise (only public,
+# Result-returning fns) and the doc sections it asks for are genuinely
+# useful API documentation.
+missing_panics_doc = "allow"
 
 [dependencies]
-tokio = { version = "1.53.1", features = ["rt", "macros", "io-std", "io-util", "fs"] }
+tokio = { version = "1.53.1", features = [
+  "rt",
+  "macros",
+  "io-std",
+  "io-util",
+  "fs",
+] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["fmt", "env-filter"] }
 

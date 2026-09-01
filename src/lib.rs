@@ -4,3 +4,5 @@
 //!
 //! Modules are added incrementally as the Rust rewrite proceeds; see the
 //! project's migration plan for the full module map.
+
+pub mod frontmatter;
