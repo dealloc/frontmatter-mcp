@@ -80,6 +80,15 @@ pub struct PropertyResult {
     pub missing: Vec<String>,
 }
 
+/// Object wrapper for a batch tool's results. MCP requires a tool's
+/// structured output (and so its `outputSchema`) to be a JSON object, not
+/// a bare array, so the batch tools return `{ "results": [...] }`.
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct BatchResults<T> {
+    /// One entry per resolved path, in resolved-path order.
+    pub results: Vec<T>,
+}
+
 /// Arguments to the `read_frontmatter` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
