@@ -1,0 +1,20 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
+  "name": "io.github.dealloc/frontmatter-mcp",
+  "description": "Reads only the YAML frontmatter of markdown documents, without loading the document body.",
+  "version": "0.1.0",
+  "repository": {
+    "url": "https://github.com/dealloc/frontmatter-mcp",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/dealloc/frontmatter-mcp/releases/download/v0.1.0/frontmatter-mcp-linux-x64.mcpb",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}
