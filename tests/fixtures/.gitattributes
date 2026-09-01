@@ -1,0 +1,6 @@
+# These fixtures exist specifically to exercise byte-level behavior
+# (a real UTF-8 BOM, real CRLF line endings) that the repo-root
+# `text=auto` normalization would otherwise silently strip on checkin
+# or checkout - which is exactly the bug this override prevents.
+bom-utf8.md          -text
+crlf-line-endings.md -text

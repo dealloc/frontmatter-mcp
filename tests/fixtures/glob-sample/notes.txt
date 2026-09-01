@@ -1,0 +1,1 @@
+Not a markdown file, should never match a *.md glob.
