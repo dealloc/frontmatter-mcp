@@ -138,10 +138,16 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Stamp version into Cargo.toml
+      - name: Stamp version into Cargo.toml and Cargo.lock
+        env:
+          VERSION: ${{ needs.changelog.outputs.version }}
         run: |
-          sed -i.bak 's/^version = "[^"]*"/version = "${{ needs.changelog.outputs.version }}"/' Cargo.toml
-          rm -f Cargo.toml.bak
+          sed -i.bak "s/^version = \"[^\"]*\"/version = \"${VERSION}\"/" Cargo.toml
+          # Keep Cargo.lock's own-package entry in sync so --locked stays
+          # usable; dependency versions are untouched.
+          sed -i.bak "/^name = \"frontmatter-mcp\"$/{n;s/^version = .*/version = \"${VERSION}\"/;}" Cargo.lock
+          rm -f Cargo.toml.bak Cargo.lock.bak
+          git --no-pager diff --stat
 
       - name: Stamp version into .mcp/server.json
         run: |
