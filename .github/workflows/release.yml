@@ -256,7 +256,7 @@ jobs:
 
       - name: Pack .mcpb bundle
         run: |
-          npx --yes @modelcontextprotocol/mcpb pack bundle \
+          npx --yes @anthropic-ai/mcpb pack bundle \
             "frontmatter-mcp-${{ matrix.name }}.mcpb"
 
       - name: Sign .mcpb bundle (self-signed)
@@ -266,7 +266,7 @@ jobs:
         # signed bundles (modelcontextprotocol/mcpb#278/#281), this step can
         # be dropped and the bundle shipped unsigned.
         run: |
-          npx --yes @modelcontextprotocol/mcpb sign --self-signed \
+          npx --yes @anthropic-ai/mcpb sign --self-signed \
             "frontmatter-mcp-${{ matrix.name }}.mcpb"
 
       - name: Checksum
