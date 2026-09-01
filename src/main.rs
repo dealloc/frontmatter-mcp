@@ -3,6 +3,10 @@
 
 use std::process::ExitCode;
 
+use frontmatter_mcp::mcp::FrontmatterServer;
+use rmcp::ServiceExt;
+use rmcp::transport::stdio;
+
 /// Text printed for `--help`/`-h`.
 const HELP: &str = "\
 frontmatter-mcp - an MCP server that reads only the YAML frontmatter of
@@ -44,10 +48,25 @@ fn parse_args<I: Iterator<Item = String>>(mut args: I) -> Action {
 /// since stdout is reserved for MCP protocol frames. The level defaults to
 /// `info` and can be overridden with `RUST_LOG`.
 fn init_tracing() {
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
-        .with_env_filter(tracing_subscriber::EnvFilter::new("info"))
+        .with_env_filter(filter)
         .init();
+}
+
+/// Starts the MCP server on the stdio transport and runs until the client
+/// disconnects.
+///
+/// # Errors
+///
+/// Returns an error if the transport fails to initialize or the service
+/// terminates abnormally.
+async fn serve() -> anyhow::Result<()> {
+    let service = FrontmatterServer::new().serve(stdio()).await?;
+    service.waiting().await?;
+    Ok(())
 }
 
 /// # Panics
@@ -74,8 +93,14 @@ async fn main() -> ExitCode {
         }
         Action::Serve => {
             init_tracing();
-            tracing::info!("frontmatter-mcp starting");
-            ExitCode::SUCCESS
+            tracing::info!("frontmatter-mcp {} starting", env!("CARGO_PKG_VERSION"));
+            match serve().await {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(error) => {
+                    tracing::error!("{error:#}");
+                    ExitCode::FAILURE
+                }
+            }
         }
     }
 }

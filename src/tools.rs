@@ -5,7 +5,9 @@
 use std::path::Path;
 
 use futures_util::future::join_all;
-use serde::Serialize;
+use rmcp::schemars;
+use rmcp::schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::frontmatter::{self, Extraction};
@@ -23,7 +25,7 @@ pub fn default_max_files() -> usize {
 
 /// Which representation of a file's frontmatter `read_frontmatter` (and
 /// the batch variant) should return.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 pub enum Format {
     /// The parsed frontmatter as a JSON object (the default).
     #[default]
@@ -48,7 +50,7 @@ impl Format {
 
 /// The result of reading one file's frontmatter. `raw`, `parsed`, and
 /// `parseError` are serialized as explicit `null` when absent.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct FrontmatterResult {
     /// The path exactly as requested.
@@ -67,7 +69,7 @@ pub struct FrontmatterResult {
 
 /// The result of projecting named properties out of one file's
 /// frontmatter.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PropertyResult {
     /// The path exactly as requested.
@@ -76,6 +78,54 @@ pub struct PropertyResult {
     pub values: Map<String, Value>,
     /// The requested names that could not be resolved, in request order.
     pub missing: Vec<String>,
+}
+
+/// Arguments to the `read_frontmatter` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadFrontmatterArgs {
+    /// Path to the markdown file, absolute or relative to the working directory.
+    pub path: String,
+    /// Which representation to return.
+    #[serde(default)]
+    pub format: Format,
+}
+
+/// Arguments to the `read_frontmatter_batch` tool. Provide exactly one of
+/// `paths` or `glob`.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadFrontmatterBatchArgs {
+    /// Explicit list of markdown file paths.
+    #[serde(default)]
+    pub paths: Option<Vec<String>>,
+    /// A glob pattern (`**` recurses) resolved against the working directory.
+    #[serde(default)]
+    pub glob: Option<String>,
+    /// Which representation to return for every file.
+    #[serde(default)]
+    pub format: Format,
+    /// Cap on how many files to read.
+    #[serde(default = "default_max_files")]
+    pub max_files: usize,
+}
+
+/// Arguments to the `get_frontmatter_properties` tool. Provide exactly one
+/// of `paths` or `glob`.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GetFrontmatterPropertiesArgs {
+    /// Property names to extract; dotted names (`metadata.owner`) walk nested objects.
+    pub properties: Vec<String>,
+    /// Explicit list of markdown file paths.
+    #[serde(default)]
+    pub paths: Option<Vec<String>>,
+    /// A glob pattern (`**` recurses) resolved against the working directory.
+    #[serde(default)]
+    pub glob: Option<String>,
+    /// Cap on how many files to read.
+    #[serde(default = "default_max_files")]
+    pub max_files: usize,
 }
 
 /// Why [`resolve_paths`] rejected its inputs. The message is what the tool

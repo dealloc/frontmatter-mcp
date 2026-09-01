@@ -40,9 +40,17 @@ semicolon_if_nothing_returned = "warn"
 # Result-returning fns) and the doc sections it asks for are genuinely
 # useful API documentation.
 missing_panics_doc = "allow"
+# rmcp's #[tool_handler] macro expands to an `async fn list_tools` with no
+# `.await`; the lint fires on code we don't own and can't change.
+unused_async_trait_impl = "allow"
 
 [dependencies]
-futures-util = { version = "0.3.34", default-features = false, features = ["std", "async-await"] }
+anyhow = "1.0.104"
+futures-util = { version = "0.3.34", default-features = false, features = [
+  "std",
+  "async-await",
+] }
+rmcp = { version = "3.2.0", features = ["server", "transport-io", "macros"] }
 saphyr-parser = "0.0.12"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["preserve_order"] }
@@ -73,3 +81,6 @@ incremental = true
 
 [profile.fast.package."*"]
 opt-level = 0
+
+[dev-dependencies]
+rmcp = { version = "3.2.0", features = ["client"] }
