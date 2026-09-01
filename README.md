@@ -54,9 +54,9 @@ a `glob` pattern (`**` recurses) — provide exactly one:
 { "glob": "docs/adr/*.md" }
 ```
 
-Returns an array of the same shape as `read_frontmatter`, one per matched
-file, read concurrently. `maxFiles` (default 500) caps how many files a
-broad glob can return.
+Returns `{ "results": [...] }` where each entry has the same shape as
+`read_frontmatter`, one per matched file, read concurrently. `maxFiles`
+(default 500) caps how many files a broad glob can return.
 
 ### `get_frontmatter_properties`
 
@@ -67,13 +67,15 @@ Extracts only specific named fields across many files:
 ```
 
 ```json
-[
-  {
-    "path": "skills/my-skill/SKILL.md",
-    "values": { "name": "my-skill", "status": "active" },
-    "missing": []
-  }
-]
+{
+  "results": [
+    {
+      "path": "skills/my-skill/SKILL.md",
+      "values": { "name": "my-skill", "status": "active" },
+      "missing": []
+    }
+  ]
+}
 ```
 
 `properties` supports dotted paths for nested keys (e.g. `"metadata.owner"`).

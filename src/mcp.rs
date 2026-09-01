@@ -8,8 +8,8 @@ use rmcp::model::{Implementation, ServerCapabilities, ServerInfo};
 use rmcp::{ErrorData, ServerHandler, tool, tool_handler, tool_router};
 
 use crate::tools::{
-    self, FrontmatterResult, GetFrontmatterPropertiesArgs, PropertyResult, ReadFrontmatterArgs,
-    ReadFrontmatterBatchArgs, ResolveError,
+    self, BatchResults, FrontmatterResult, GetFrontmatterPropertiesArgs, PropertyResult,
+    ReadFrontmatterArgs, ReadFrontmatterBatchArgs, ResolveError,
 };
 
 /// The frontmatter MCP server. Holds the generated tool router; construct
@@ -79,9 +79,10 @@ impl FrontmatterServer {
     async fn read_frontmatter_batch(
         &self,
         Parameters(args): Parameters<ReadFrontmatterBatchArgs>,
-    ) -> Result<Json<Vec<FrontmatterResult>>, ErrorData> {
+    ) -> Result<Json<BatchResults<FrontmatterResult>>, ErrorData> {
         let paths = Self::resolve(args.paths.as_deref(), args.glob.as_deref(), args.max_files)?;
-        Ok(Json(tools::read_batch(&paths, args.format).await))
+        let results = tools::read_batch(&paths, args.format).await;
+        Ok(Json(BatchResults { results }))
     }
 
     /// Extracts specific named properties from the frontmatter of many
@@ -93,9 +94,10 @@ impl FrontmatterServer {
     async fn get_frontmatter_properties(
         &self,
         Parameters(args): Parameters<GetFrontmatterPropertiesArgs>,
-    ) -> Result<Json<Vec<PropertyResult>>, ErrorData> {
+    ) -> Result<Json<BatchResults<PropertyResult>>, ErrorData> {
         let paths = Self::resolve(args.paths.as_deref(), args.glob.as_deref(), args.max_files)?;
-        Ok(Json(tools::project_batch(&paths, &args.properties).await))
+        let results = tools::project_batch(&paths, &args.properties).await;
+        Ok(Json(BatchResults { results }))
     }
 }
 

@@ -67,6 +67,31 @@ async fn lists_the_three_tools_with_string_format_enum() {
     client.cancel().await.unwrap();
 }
 
+/// Every tool's output schema is a JSON object at the top level - strict
+/// MCP clients (Claude's agent modes) reject a `tools/list` where any
+/// `outputSchema.type` is not `"object"`, which is why the batch tools
+/// wrap their results.
+#[tokio::test]
+async fn every_output_schema_is_an_object() {
+    let client = connect().await;
+
+    let tools = client.peer().list_tools(None).await.unwrap();
+    for tool in &tools.tools {
+        let output_schema = tool
+            .output_schema
+            .as_ref()
+            .unwrap_or_else(|| panic!("{} has no output schema", tool.name));
+        assert_eq!(
+            output_schema.get("type").and_then(Value::as_str),
+            Some("object"),
+            "{} output schema is not an object: {output_schema:?}",
+            tool.name
+        );
+    }
+
+    client.cancel().await.unwrap();
+}
+
 /// A successful call returns camelCase structured content.
 #[tokio::test]
 async fn call_returns_camel_case_structured_content() {
